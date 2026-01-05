@@ -1,0 +1,11 @@
+# Безпека (Ключі та паролі)
+service_account.json
+.env
+bot_token.txt
+
+# Системні файли Python
+__pycache__
+.pyc
+venv
+.idea
+.vscode
