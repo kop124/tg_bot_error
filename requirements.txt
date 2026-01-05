@@ -1,1 +1,2 @@
 pip install python-telegram-bot google-cloud-vision gspread oauth2client
+pip install python-dotenv

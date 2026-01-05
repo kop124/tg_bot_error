@@ -7,20 +7,31 @@ from telegram.ext import ApplicationBuilder, ContextTypes, MessageHandler, filte
 from google.cloud import vision
 from google.oauth2 import service_account
 import gspread
+from dotenv import load_dotenv  # <--- 1. Імпортуємо бібліотеку
 
-# ==========================================
-# 👇 ВАШІ НАЛАШТУВАННЯ 👇
-TELEGRAM_TOKEN = '8507460914:AAH01YVPH1Z6NE7HpsBF5bFKg_Rdvuh3egc'
+# --- ЗАВАНТАЖЕННЯ ЗМІННИХ ОТОЧЕННЯ ---
+load_dotenv()  # <--- 2. Читаємо файл .env
+
+# --- ОТРИМУЄМО ТОКЕН ---
+TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN') # <--- 3. Беремо токен з файлу
+
+# --- НАЛАШТУВАННЯ ---
 GOOGLE_CREDENTIALS_FILE = 'service_account.json'
 SPREADSHEET_NAME = 'Interlocks_Log' 
 SHEET_NAME = 'Sheet1'
-# ==========================================
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s', level=logging.INFO)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
+# --- ПЕРЕВІРКИ ---
+# 1. Перевірка токена
+if not TELEGRAM_TOKEN:
+    print("❌ ПОМИЛКА: Токен не знайдено! Перевірте файл .env")
+    exit()
+
+# 2. Перевірка файлу ключів Google
 if not os.path.exists(GOOGLE_CREDENTIALS_FILE):
-    print(f"❌ КРИТИЧНА ПОМИЛКА: Файл '{GOOGLE_CREDENTIALS_FILE}' не знайдено!")
+    print(f"❌ ПОМИЛКА: Файл '{GOOGLE_CREDENTIALS_FILE}' не знайдено!")
     exit()
 
 try:
@@ -32,11 +43,11 @@ try:
 except Exception as e:
     print(f"❌ Помилка підключення до Google: {e}")
 
-# --- ЛОГІКА ОЧИЩЕННЯ (FINAL VERSION) ---
+# --- ЛОГІКА ОЧИЩЕННЯ ---
 def parse_medical_interface(full_text):
     data = {'name': 'Не розпізнано', 'description': 'Не розпізнано'}
     
-    # 1. NAME (Тільки перший рядок після слова Name)
+    # 1. NAME
     name_match = re.search(r"Name\s*\n+([^\n]+)", full_text, re.IGNORECASE)
     if name_match:
         raw_name = name_match.group(1).strip()
@@ -60,23 +71,19 @@ def parse_medical_interface(full_text):
         # КРОК Б: Прибираємо переноси рядків
         cleaner_text = cleaner_text.replace('\n', ' ')
         
-        # КРОК В: Видаляємо конкретне сміття (слова-паразити)
+        # КРОК В: Видаляємо сміття
         garbage_phrases = [
             "Not Assigned", "DYN. OUT", "Terminates", "Override", "OK",
             "deg", "rst. en", "rly off", "YN.", "UT", "YN "
         ]
         
         for garbage in garbage_phrases:
-            # Видаляємо без врахування регістру
             pattern = re.compile(re.escape(garbage), re.IGNORECASE)
             cleaner_text = pattern.sub("", cleaner_text)
 
         # КРОК Г: "Хвостовий фільтр"
-        # Часто в кінці залишаються цифри або короткі літери (типу "151 1" або "MU 2")
-        # Цей Regex каже: "Видалити з кінця рядка будь-яку послідовність цифр та коротких слів (до 3 літер)"
         cleaner_text = re.sub(r'(\s+\d+|\s+[A-Za-z.]{1,3})+\s*$', '', cleaner_text)
         
-        # Фінальна чистка пробілів
         data['description'] = " ".join(cleaner_text.split())
 
     return data
@@ -100,13 +107,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         full_text = response.text_annotations[0].description
         
-        print(f"\n--- СИРИЙ ТЕКСТ (в один рядок) ---\n{repr(full_text)}\n----------------------------------\n")
-        
         parsed = parse_medical_interface(full_text)
-        
         current_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # ЗАПИС В ТАБЛИЦЮ (Тільки 3 колонки: Дата, Ім'я, Опис)
         worksheet.append_row([
             current_time,
             parsed['name'],
@@ -127,7 +130,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(f"⚠️ Помилка: {e}")
 
 if __name__ == '__main__':
+    # Тут використовуємо змінну, яку завантажили з .env
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
     application.add_handler(MessageHandler(filters.PHOTO | filters.Document.IMAGE, handle_photo))
-    print("🤖 Бот запущено. Clean Version.")
+    print("🤖 Бот запущено (Token з .env).")
     application.run_polling()
